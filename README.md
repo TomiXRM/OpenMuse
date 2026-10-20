@@ -124,6 +124,117 @@ To visualize live LSL streams, open a new terminal (while the streaming is runni
 OpenMuse view
 ```
 
+### Visualize Live Streams with Rerun
+
+Rerun is included in the standard installation. In a development checkout:
+
+```sh
+uv sync
+```
+
+The locked Rerun SDK (0.29.2) provides wheels for Apple Silicon macOS,
+64-bit Linux x86_64/aarch64 (glibc 2.28+), and Windows x86_64; it has no source
+distribution. Since Rerun is a standard dependency in this fork, installation
+requires a supported platform. Intel macOS and 32-bit Raspberry Pi OS are not
+supported by this dependency set.
+
+Keep `OpenMuse stream` running in another terminal, then start the viewer:
+
+```sh
+uv run OpenMuse view-rerun
+# Sensor-specific layouts:
+uv run OpenMuse view-rerun --layout eeg
+uv run OpenMuse view-rerun --layout accgyro
+uv run OpenMuse view-rerun --layout optics
+# Filter by stream name and exact channel labels:
+uv run OpenMuse view-rerun --stream-name EEG --channels EEG_TP9 EEG_AF7
+# Optionally filter by Muse device ID:
+uv run OpenMuse view-rerun --address <your-muse-address>
+```
+
+![Rerun full layout with raw signal channels and a pose tile](media/rerun-all.png)
+
+For a standalone installation, use the installation instructions above and run
+`OpenMuse view-rerun` in the activated environment.
+
+`--layout` selects `all` (default, automatic grid), `eeg` (4 columns),
+`accgyro` (3 columns), or `optics` (4 columns). Each sensor preset displays all
+channels from its matching LSL streams. Layout selection combines with
+`--address`, `--stream-name`, and `--channels`; only channels matching every
+specified filter are displayed. Layout names are case-insensitive.
+
+The `all` and `accgyro` layouts automatically include a 3D head model and
+coordinate frames whenever a matching ACCGYRO stream is available:
+
+```sh
+uv run OpenMuse view-rerun --layout accgyro
+```
+
+![Rerun ACC/GYRO layout with gravity-derived tilt](media/rerun-accgyro.png)
+
+In the `all` layout, each 3D pose pane occupies one grid tile, the same size as a
+signal plot. In the `accgyro` layout, the 3D pane uses the left quarter of the
+viewport and signal plots use the remaining three quarters.
+Pose display requires a matching ACCGYRO stream with `ACC_X`,
+`ACC_Y`, and `ACC_Z` labels. The smaller fixed axes are the reference frame;
+the larger axes show the head-local frame. Red/green/blue indicate X/Y/Z.
+The model uses +X toward the wearer's left, +Y backward, and +Z upward;
+its face points toward −Y. Left/right refer to the wearer, not the screen.
+
+Using the [Muse gravity convention](https://siddhantattavar.com/libmuse/enumcom_1_1choosemuse_1_1libmuse_1_1_accelerometer.html),
+positive `ACC_X` indicates nodding down, positive `ACC_Y` indicates tilting
+toward the wearer's right, and `ACC_Z` is +1 g when level. Before computing
+roll/pitch, the viewer converts gravity to head-local up as
+`(ACC_Y, ACC_X, ACC_Z)` and aligns that vector with reference +Z.
+Yaw is fixed to zero, with no translation or gyro integration.
+
+There is no startup zeroing or mounting-angle correction: `(0, 0, 1)` gives an
+upright model, while nonzero horizontal gravity components remain visible even
+when stationary. This is a gravity-based debugging estimate, not ROS TF,
+calibrated head pose, or a full attitude estimator. Motion acceleration distorts
+the estimate. Zero or non-finite acceleration hides the head model and sensor
+axes until valid data returns.
+
+Transforms use `lsl_time` and are included when `--save` is specified. Channel
+filters affect the scalar plots; tilt still uses all three acceleration channels.
+
+The bundled head model is derived from `OpenMuse/assets/head.step`; the viewer
+loads `head.glb` without requiring CAD software. The STEP surface was tessellated
+with Gmsh (1.5–3 mm mesh size), centered on its mesh bounding box, and uniformly
+scaled to a height of 1.6 viewer units. The model keeps +Z up and its face toward
+−Y. This is a visualization convention, not a measured sensor-to-head calibration.
+The model is embedded in `.rrd` recordings, so replay does not need the source STEP
+or an external model file.
+
+Each selected channel starts in its own time-series pane. Use Rerun's Blueprint
+panel to rearrange panes, select signals, or combine series in a view. Without
+filters, all discovered `Muse-` streams (including multiple devices) are shown.
+At each launch, the command activates a fresh grid for the selected channels,
+replacing any layout Rerun restored from an earlier session.
+The left Blueprint sidebar and right Selection sidebar start collapsed; use the
+top-right panel toggles to reopen them. The bottom timeline remains available.
+Streams are discovered once at startup; restart the command to discover new ones.
+Press Ctrl+C in the terminal to stop receiving.
+
+Values are logged without the original viewer's interpolation, DC removal, or
+normalization. The `lsl_time` timeline preserves the incoming LSL timestamps
+without inlet clock correction or smoothing. It is the publisher's LSL clock,
+not UTC; this viewer does not establish cross-machine clock synchronization or
+recover information already lost upstream in decoding.
+
+Save the received data for inspection in Rerun:
+
+```sh
+uv run OpenMuse view-rerun --save debug.rrd
+# Record for 30 seconds without opening a GUI:
+uv run OpenMuse view-rerun --save debug.rrd --no-spawn --duration 30
+uv run rerun debug.rrd
+```
+
+The Rerun recording contains the selected received channels, not raw BLE packets
+or a lossless acquisition archive. This command does not connect to BLE itself
+and does not require ROS 2.
+
 ### Hyperscanning (Multiple Devices Streaming)
 
 To record from multiple Muse devices simultaneously (e.g., for hyperscanning studies):
